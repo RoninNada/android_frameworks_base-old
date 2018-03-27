@@ -48,6 +48,9 @@
 
     <color name="updater_snackbar_text_color">@android:color/white</color>
 
+    <!-- Settings icon tint color -->
+    <color name="settings_icon_tint_color">#167C80</color>
+
     <!-- Power menu items -->
     <color name="power_menu_icons">#167C80</color>
 </resources>
