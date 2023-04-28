@@ -84,7 +84,7 @@ public class RebootTile extends QSTileImpl<BooleanState> {
 
     @Override
     public int getMetricsCategory() {
-        return MetricsEvent.CRDROID_SETTINGS;
+        return MetricsEvent.CUSTOM;
     }
 
     @Override

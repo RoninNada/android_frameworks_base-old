@@ -45,12 +45,12 @@ import android.widget.Toast;
 
 import com.android.internal.logging.MetricsLogger;
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
-import com.android.internal.util.crdroid.Utils;
+import com.android.internal.util.custom.Utils;
 import com.android.systemui.Dependency;
 import com.android.systemui.R;
 import com.android.systemui.plugins.ActivityStarter;
-import com.android.systemui.crdroid.omnijaws.DetailedWeatherView;
-import com.android.systemui.crdroid.omnijaws.OmniJawsClient;
+import com.android.systemui.custom.omnijaws.DetailedWeatherView;
+import com.android.systemui.custom.omnijaws.OmniJawsClient;
 import com.android.systemui.plugins.qs.DetailAdapter;
 import com.android.systemui.plugins.qs.QSTile.BooleanState;
 import com.android.systemui.qs.QSDetailItems;

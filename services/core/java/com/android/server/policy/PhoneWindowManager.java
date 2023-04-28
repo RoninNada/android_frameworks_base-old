@@ -259,7 +259,7 @@ import com.android.internal.policy.IKeyguardDismissCallback;
 import com.android.internal.policy.IShortcutService;
 import com.android.internal.policy.PhoneWindow;
 import com.android.internal.statusbar.IStatusBarService;
-import com.android.internal.util.crdroid.Utils;
+import com.android.internal.util.custom.Utils;
 import com.android.internal.util.gesture.EdgeGesturePosition;
 import com.android.internal.util.gesture.EdgeServiceConstants;
 import com.android.internal.util.ScreenShapeHelper;

@@ -55,8 +55,8 @@
             android:layout_height="match_parent"
             android:orientation="horizontal" >
 
-            <com.android.systemui.crdroid.logo.LogoImageView
-                android:id="@+id/crdroid_logo"
+            <com.android.systemui.custom.logo.LogoImageView
+                android:id="@+id/custom_logo"
                 android:layout_width="wrap_content"
                 android:layout_height="match_parent"
                 android:paddingEnd="1dip"
@@ -75,7 +75,7 @@
                 android:visibility="gone"
                 />
 
-            <com.android.systemui.crdroid.statusbarweather.StatusBarWeatherImage
+            <com.android.systemui.custom.statusbarweather.StatusBarWeatherImage
                 android:id="@+id/weather_image"
                 android:layout_width="24dp"
                 android:layout_height="match_parent"
@@ -83,7 +83,7 @@
                 android:paddingEnd="1dip"
                 android:visibility="gone" />
 
-            <com.android.systemui.crdroid.statusbarweather.StatusBarWeather
+            <com.android.systemui.custom.statusbarweather.StatusBarWeather
                 android:id="@+id/weather_temp"
                 android:layout_width="wrap_content"
                 android:layout_height="match_parent"
@@ -94,7 +94,7 @@
                 android:paddingEnd="1dip"
                 android:visibility="gone" />
 
-            <com.android.systemui.crdroid.carrierlabel.CarrierLabel
+            <com.android.systemui.custom.carrierlabel.CarrierLabel
                 android:id="@+id/statusbar_carrier_text"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -136,7 +136,7 @@
 
             </com.android.systemui.statusbar.LineageStatusBarItemHolder>
 
-            <com.android.systemui.crdroid.statusbarweather.StatusBarWeatherImageRight
+            <com.android.systemui.custom.statusbarweather.StatusBarWeatherImageRight
                 android:id="@+id/weather_image_right"
                 android:layout_width="24dp"
                 android:layout_height="match_parent"
@@ -144,7 +144,7 @@
                 android:paddingEnd="2dip"
                 android:visibility="gone" />
 
-            <com.android.systemui.crdroid.statusbarweather.StatusBarWeatherRight
+            <com.android.systemui.custom.statusbarweather.StatusBarWeatherRight
                 android:id="@+id/weather_temp_right"
                 android:layout_width="wrap_content"
                 android:layout_height="match_parent"
@@ -168,8 +168,8 @@
                 android:gravity="center_vertical|start"
                 />
 
-            <com.android.systemui.crdroid.logo.LogoImageViewRight
-                android:id="@+id/crdroid_logo_right"
+            <com.android.systemui.custom.logo.LogoImageViewRight
+                android:id="@+id/custom_logo_right"
                 android:layout_width="wrap_content"
                 android:layout_height="match_parent"
                 android:paddingStart="2dip"
@@ -213,7 +213,7 @@
         android:layout_height="match_parent"
     />
 
-    <com.android.systemui.crdroid.batterybar.BatteryBarController
+    <com.android.systemui.custom.batterybar.BatteryBarController
         android:id="@+id/battery_bar"
         android:layout_width="match_parent"
         android:layout_height="1dp"

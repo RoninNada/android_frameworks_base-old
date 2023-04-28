@@ -4618,8 +4618,8 @@ message MetricsEvent {
     // Add new aosp constants above this line.
     // END OF AOSP CONSTANTS
 
-    // crDroid Settings
-    CRDROID_SETTINGS = 1500;
+    // Custom Settings
+    CUSTOM = 1500;
     OMNI_QS_WEATHER = 1501;
     OMNI_QS_WEATHER_DETAILS = 1502;
   }

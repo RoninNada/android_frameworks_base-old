@@ -276,7 +276,7 @@
 
         <!-- started from PhoneWindowManager
              TODO: Should have an android:permission attribute -->
-        <service android:name=".crdroid.onthego.OnTheGoService"
+        <service android:name=".custom.onthego.OnTheGoService"
             android:process=":onthego"
             android:exported="false" />
 
@@ -299,7 +299,7 @@
             </intent-filter>
         </receiver>
 
-        <service android:name=".crdroid.screenstate.ScreenStateService"
+        <service android:name=".custom.screenstate.ScreenStateService"
                 android:exported="true" >
             <intent-filter>
                <action android:name="android.intent.action.SCREEN_STATE_SERVICE_UPDATE"/>
@@ -511,7 +511,7 @@
         <activity
             android:name="com.android.systemui.CreateShortcut"
             android:label="@string/shortcut_picker"
-            android:icon="@drawable/ic_shortcut_crdroid"
+            android:icon="@drawable/ic_shortcut_custom"
             android:configChanges="orientation|keyboardHidden|screenSize" >
             <intent-filter>
                 <action android:name="android.intent.action.CREATE_SHORTCUT" />
@@ -523,7 +523,7 @@
         <activity
             android:name="com.android.systemui.shortcuts.ChamberOfSecrets"
             android:label="@string/shortcut_chamber"
-            android:icon="@drawable/ic_shortcut_crdroid"
+            android:icon="@drawable/ic_shortcut_custom"
             android:theme="@android:style/Theme.NoDisplay"
             android:excludeFromRecents="true"
             android:launchMode="singleInstance" >

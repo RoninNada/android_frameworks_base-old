@@ -199,7 +199,7 @@ import com.android.systemui.assist.AssistManager;
 import com.android.systemui.classifier.FalsingLog;
 import com.android.systemui.classifier.FalsingManager;
 import com.android.systemui.colorextraction.SysuiColorExtractor;
-import com.android.systemui.crdroid.omnistyle.StatusBarHeaderMachine;
+import com.android.systemui.custom.omnistyle.StatusBarHeaderMachine;
 import com.android.systemui.doze.DozeHost;
 import com.android.systemui.doze.DozeLog;
 import com.android.systemui.doze.DozeReceiver;

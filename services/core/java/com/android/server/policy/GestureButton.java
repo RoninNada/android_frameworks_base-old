@@ -44,7 +44,7 @@ import android.view.WindowManagerPolicy.WindowState;
 import android.view.inputmethod.InputMethodManagerInternal;
 
 import com.android.internal.R;
-import com.android.internal.util.crdroid.Utils;
+import com.android.internal.util.custom.Utils;
 import com.android.server.LocalServices;
 import com.android.server.statusbar.StatusBarManagerInternal;
 

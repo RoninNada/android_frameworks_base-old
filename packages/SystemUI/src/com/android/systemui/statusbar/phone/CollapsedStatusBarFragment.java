@@ -61,7 +61,7 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
     private LinearLayout mSystemIconArea;
     private LinearLayout mCustomIconArea;
     private LinearLayout mCenterClockLayout;
-    private View mCrDroidLogoRight;
+    private View mCustomLogoRight;
     private View mWeatherRight, mWeatherImageRight;
     private View mNotificationIconAreaInner;
     private int mDisabled1;
@@ -124,7 +124,7 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
         mSystemIconArea = mStatusBar.findViewById(R.id.system_icon_area);
         mCustomIconArea = mStatusBar.findViewById(R.id.left_icon_area);
         mCenterClockLayout = (LinearLayout) mStatusBar.findViewById(R.id.center_clock_layout);
-        mCrDroidLogoRight = mStatusBar.findViewById(R.id.crdroid_logo_right);
+        mCustomLogoRight = mStatusBar.findViewById(R.id.custom_logo_right);
         mWeatherRight = mStatusBar.findViewById(R.id.weather_temp_right);
         mWeatherImageRight = mStatusBar.findViewById(R.id.weather_image_right);
         mBatteryBar = mStatusBar.findViewById(R.id.battery_bar);
@@ -236,7 +236,7 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
         animateHide(mBatteryBar, animate);
         animateHide(mCustomIconArea, animate);
         animateHide(mCenterClockLayout, animate);
-        animateHide(mCrDroidLogoRight, animate);
+        animateHide(mCustomLogoRight, animate);
         animateHide(mWeatherRight, animate);
         animateHide(mWeatherImageRight, animate);
         animateHide(mSystemIconArea, animate);
@@ -246,7 +246,7 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
         animateShow(mBatteryBar, animate);
         animateShow(mCustomIconArea, animate);
         animateShow(mCenterClockLayout, animate);
-        animateShow(mCrDroidLogoRight, animate);
+        animateShow(mCustomLogoRight, animate);
         animateShow(mWeatherRight, animate);
         animateShow(mWeatherImageRight, animate);
         animateShow(mSystemIconArea, animate);

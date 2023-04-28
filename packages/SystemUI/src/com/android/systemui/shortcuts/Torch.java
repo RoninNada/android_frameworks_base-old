@@ -21,8 +21,8 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.os.UserHandle;
 
-import com.android.internal.util.crdroid.ActionConstants;
-import com.android.internal.util.crdroid.Action;
+import com.android.internal.util.custom.ActionConstants;
+import com.android.internal.util.custom.Action;
 
 public class Torch extends Activity  {
 

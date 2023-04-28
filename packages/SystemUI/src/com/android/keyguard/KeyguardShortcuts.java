@@ -36,10 +36,10 @@ import android.view.View;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 
-import com.android.internal.util.crdroid.AppHelper;
-import com.android.internal.util.crdroid.ActionHelper;
-import com.android.internal.util.crdroid.ActionConfig;
-import com.android.internal.util.crdroid.Action;
+import com.android.internal.util.custom.AppHelper;
+import com.android.internal.util.custom.ActionHelper;
+import com.android.internal.util.custom.ActionConfig;
+import com.android.internal.util.custom.Action;
 import com.android.internal.widget.LockPatternUtils;
 
 import com.android.keyguard.R;
