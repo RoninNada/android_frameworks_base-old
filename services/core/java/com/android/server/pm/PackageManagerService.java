@@ -114,6 +114,7 @@ import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.app.ActivityManager;
 import android.app.AppOpsManager;
+import android.app.BroadcastOptions;
 import android.app.IActivityManager;
 import android.app.ResourcesManager;
 import android.app.admin.IDevicePolicyManager;
@@ -1105,9 +1106,13 @@ public class PackageManagerService extends IPackageManager.Stub
             verificationIntent.setComponent(mIntentFilterVerifierComponent);
             verificationIntent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND);
 
+            final long whitelistTimeout = getVerificationTimeout();
+            final BroadcastOptions options = BroadcastOptions.makeBasic();
+            options.setTemporaryAppWhitelistDuration(whitelistTimeout);
+
             DeviceIdleController.LocalService idleController = getDeviceIdleController();
             idleController.addPowerSaveTempWhitelistApp(Process.myUid(),
-                    mIntentFilterVerifierComponent.getPackageName(), getVerificationTimeout(),
+                    mIntentFilterVerifierComponent.getPackageName(), whitelistTimeout,
                     UserHandle.USER_SYSTEM, true, "intent filter verifier");
 
             mContext.sendBroadcastAsUser(verificationIntent, UserHandle.SYSTEM);
@@ -1148,9 +1153,6 @@ public class PackageManagerService extends IPackageManager.Stub
                         + verificationId + " packageName:" + packageName);
                 return;
             }
-            if (DEBUG_DOMAIN_VERIFICATION) Slog.d(TAG,
-                    "Updating IntentFilterVerificationInfo for package " + packageName
-                            +" verificationId:" + verificationId);
 
             synchronized (mPackages) {
                 if (verified) {
@@ -1168,36 +1170,70 @@ public class PackageManagerService extends IPackageManager.Stub
                     int updatedStatus = INTENT_FILTER_DOMAIN_VERIFICATION_STATUS_UNDEFINED;
                     boolean needUpdate = false;
 
-                    // We cannot override the STATUS_ALWAYS / STATUS_NEVER states if they have
-                    // already been set by the User thru the Disambiguation dialog
-                    switch (userStatus) {
-                        case INTENT_FILTER_DOMAIN_VERIFICATION_STATUS_UNDEFINED:
-                            if (verified) {
-                                updatedStatus = INTENT_FILTER_DOMAIN_VERIFICATION_STATUS_ALWAYS;
-                            } else {
-                                updatedStatus = INTENT_FILTER_DOMAIN_VERIFICATION_STATUS_ASK;
-                            }
-                            needUpdate = true;
-                            break;
+                    // In a success case, we promote from undefined or ASK to ALWAYS.  This
+                    // supports a flow where the app fails validation but then ships an updated
+                    // APK that passes, and therefore deserves to be in ALWAYS.
+                    //
+                    // If validation failed, the undefined state winds up in the basic ASK behavior,
+                    // but apps that previously passed and became ALWAYS are *demoted* out of
+                    // that state, since they would not deserve the ALWAYS behavior in case of a
+                    // clean install.
+                     switch (userStatus) {
+                         case INTENT_FILTER_DOMAIN_VERIFICATION_STATUS_ALWAYS:
+                             if (!verified) {
+                                 // Don't demote if sysconfig says 'always'
+                                 SystemConfig systemConfig = SystemConfig.getInstance();
+                                 ArraySet<String> packages = systemConfig.getLinkedApps();
+                                 if (!packages.contains(packageName)) {
+                                     // updatedStatus is already UNDEFINED
+                                     needUpdate = true;
 
-                        case INTENT_FILTER_DOMAIN_VERIFICATION_STATUS_ASK:
-                            if (verified) {
-                                updatedStatus = INTENT_FILTER_DOMAIN_VERIFICATION_STATUS_ALWAYS;
-                                needUpdate = true;
-                            }
-                            break;
+                                     if (DEBUG_DOMAIN_VERIFICATION) {
+                                         Slog.d(TAG, "Formerly validated but now failing; demoting");
+                                     }
+                                 } else {
+                                     if (DEBUG_DOMAIN_VERIFICATION) {
+                                         Slog.d(TAG, "Updating bundled package " + packageName
+                                                 + " failed autoVerify, but sysconfig supersedes");
+                                     }
+                                     // leave needUpdate == false here intentionally
+                                 }
+                             }
+                             break;
 
-                        default:
-                            // Nothing to do
-                    }
+                         case INTENT_FILTER_DOMAIN_VERIFICATION_STATUS_UNDEFINED:
+                             // Stay in 'undefined' on verification failure
+                             if (verified) {
+                                 updatedStatus = INTENT_FILTER_DOMAIN_VERIFICATION_STATUS_ALWAYS;
+                             }
+                             needUpdate = true;
+                             if (DEBUG_DOMAIN_VERIFICATION) {
+                                 Slog.d(TAG, "Applying update; old=" + userStatus
+                                         + " new=" + updatedStatus);
+                             }
+                             break;
+
+                         case INTENT_FILTER_DOMAIN_VERIFICATION_STATUS_ASK:
+                             // Keep in 'ask' on failure
+                             if (verified) {
+                                 updatedStatus = INTENT_FILTER_DOMAIN_VERIFICATION_STATUS_ALWAYS;
+                                 needUpdate = true;
+                             }
+                             break;
+
+                         default:
+                             // Nothing to do
+                      }
 
                     if (needUpdate) {
                         mSettings.updateIntentFilterVerificationStatusLPw(
                                 packageName, updatedStatus, userId);
                         scheduleWritePackageRestrictionsLocked(userId);
                     }
+                } else {
+                    Slog.i(TAG, "autoVerify ignored when installing for all users");
                 }
-            }
+             }
         }
 
         @Override
@@ -3663,12 +3699,9 @@ public class PackageManagerService extends IPackageManager.Stub
         Iterator<ResolveInfo> iter = matches.iterator();
         while (iter.hasNext()) {
             final ResolveInfo rInfo = iter.next();
-            final PackageSetting ps = mSettings.mPackages.get(rInfo.activityInfo.packageName);
-            if (ps != null) {
-                final PermissionsState permissionsState = ps.getPermissionsState();
-                if (permissionsState.hasPermission(Manifest.permission.INSTALL_PACKAGES, 0)) {
-                    continue;
-                }
+            if (checkPermission(Manifest.permission.INSTALL_PACKAGES,
+                    rInfo.activityInfo.packageName, 0) == PERMISSION_GRANTED) {
+                continue;
             }
             iter.remove();
         }
@@ -3916,9 +3949,24 @@ public class PackageManagerService extends IPackageManager.Stub
         final int[] gids = (flags & PackageManager.GET_GIDS) == 0
                 ? EMPTY_INT_ARRAY : permissionsState.computeGids(userId);
         // Compute granted permissions only if package has requested permissions
-        final Set<String> permissions = ArrayUtils.isEmpty(p.requestedPermissions)
+        Set<String> permissions = ArrayUtils.isEmpty(p.requestedPermissions)
                 ? Collections.<String>emptySet() : permissionsState.getPermissions(userId);
         final PackageUserState state = ps.readUserState(userId);
+        if (state.instantApp) {
+            permissions = new ArraySet<>(permissions);
+            permissions.removeIf(permissionName -> {
+                BasePermission permission = mSettings.mPermissions.get(permissionName);
+                if (permission == null) {
+                    return true;
+                }
+                if (!permission.isInstant()) {
+                    EventLog.writeEvent(0x534e4554, "140256621", UserHandle.getUid(userId,
+                            ps.appId), permissionName);
+                    return true;
+                }
+                return false;
+            });
+        }
 
         if ((flags & MATCH_UNINSTALLED_PACKAGES) != 0
                 && ps.isSystem()) {
@@ -4719,6 +4767,9 @@ public class PackageManagerService extends IPackageManager.Stub
                             InstantAppRegistry.DEFAULT_UNINSTALLED_INSTANT_APP_MIN_CACHE_PERIOD))) {
                 return;
             }
+
+            // 11. Clear temp install session files
+            mInstallerService.freeStageDirs(volumeUuid, internalVolume);
         } else {
             try {
                 mInstaller.freeCache(volumeUuid, bytes, 0, 0);
@@ -6560,6 +6611,11 @@ public class PackageManagerService extends IPackageManager.Stub
     @Override
     public List<String> getAllPackages() {
         final int callingUid = Binder.getCallingUid();
+        // enforceSystemOrRootOrShell:
+        if (callingUid != Process.SYSTEM_UID && callingUid != Process.ROOT_UID 
+                && callingUid != Process.SHELL_UID) {
+            throw new SecurityException("getAllPackages is limited to privileged callers");
+        }        
         final int callingUserId = UserHandle.getUserId(callingUid);
         synchronized (mPackages) {
             if (canViewInstantApps(callingUid, callingUserId)) {
@@ -8735,10 +8791,9 @@ public class PackageManagerService extends IPackageManager.Stub
     private void addPackageHoldingPermissions(ArrayList<PackageInfo> list, PackageSetting ps,
             String[] permissions, boolean[] tmp, int flags, int userId) {
         int numMatch = 0;
-        final PermissionsState permissionsState = ps.getPermissionsState();
         for (int i=0; i<permissions.length; i++) {
             final String permission = permissions[i];
-            if (permissionsState.hasPermission(permission, userId)) {
+            if (checkPermission(permission, ps.name, userId) == PERMISSION_GRANTED) {
                 tmp[i] = true;
                 numMatch++;
             } else {
@@ -11366,7 +11421,7 @@ public class PackageManagerService extends IPackageManager.Stub
         } else {
             final int userId = user == null ? 0 : user.getIdentifier();
             // Modify state for the given package setting
-            commitPackageSettings(pkg, pkgSetting, user, scanFlags,
+            commitPackageSettings(pkg, oldPkg, pkgSetting, user, scanFlags,
                     (policyFlags & PackageParser.PARSE_CHATTY) != 0 /*chatty*/);
             if (pkgSetting.getInstantApp(userId)) {
                 mInstantAppRegistry.addInstantAppLPw(userId, pkgSetting.appId);
@@ -11736,10 +11791,73 @@ public class PackageManagerService extends IPackageManager.Stub
     }
 
     /**
+     * If permissions are upgraded to runtime, or their owner changes to the system, then any
+     * granted permissions must be revoked.
+     *
+     * @param permissionsToRevoke A list of permission names to revoke
+     * @param allPackageNames All package names
+     */
+    private void revokeRuntimePermissionsIfPermissionDefinitionChanged(
+            @NonNull List<String> permissionsToRevoke,
+            @NonNull ArrayList<String> allPackageNames) {
+
+        final int[] userIds = UserManagerService.getInstance().getUserIds();
+        final int numPermissions = permissionsToRevoke.size();
+        final int numUserIds = userIds.length;
+        final int numPackages = allPackageNames.size();
+        final int callingUid = Binder.getCallingUid();
+
+        for (int permNum = 0; permNum < numPermissions; permNum++) {
+            String permName = permissionsToRevoke.get(permNum);
+
+            BasePermission bp = mSettings.mPermissions.get(permName);
+            if (bp == null || !bp.isRuntime()) {
+                continue;
+            }
+            for (int userIdNum = 0; userIdNum < numUserIds; userIdNum++) {
+                final int userId = userIds[userIdNum];
+                for (int packageNum = 0; packageNum < numPackages; packageNum++) {
+                    final String packageName = allPackageNames.get(packageNum);
+                    final int uid = getPackageUid(packageName, 0, userId);
+                    if (uid < Process.FIRST_APPLICATION_UID) {
+                        // do not revoke from system apps
+                        continue;
+                    }
+                    final int permissionState = checkPermission(permName, packageName,
+                            userId);
+                    final int flags = getPermissionFlags(permName, packageName, userId);
+                    final int flagMask = FLAG_PERMISSION_SYSTEM_FIXED
+                            | FLAG_PERMISSION_POLICY_FIXED
+                            | FLAG_PERMISSION_GRANTED_BY_DEFAULT;
+                    if (permissionState == PackageManager.PERMISSION_GRANTED
+                            && (flags & flagMask) == 0) {
+                        EventLog.writeEvent(0x534e4554, "154505240", uid,
+                                "Revoking permission " + permName + " from package "
+                                        + packageName + " due to definition change");
+                        EventLog.writeEvent(0x534e4554, "168319670", uid,
+                                "Revoking permission " + permName + " from package "
+                                        + packageName + " due to definition change");
+                        Slog.e(TAG, "Revoking permission " + permName + " from package "
+                                + packageName + " due to definition change");
+                        try {
+                            revokeRuntimePermission(packageName, permName, userId, false);
+                        } catch (Exception e) {
+                            Slog.e(TAG, "Could not revoke " + permName + " from "
+                                    + packageName, e);
+                        }
+                    }
+                }
+            }
+            bp.setPermissionDefinitionChanged(false);
+        }
+    }
+
+    /**
      * Adds a scanned package to the system. When this method is finished, the package will
      * be available for query, resolution, etc...
      */
-    private void commitPackageSettings(PackageParser.Package pkg, PackageSetting pkgSetting,
+    private void commitPackageSettings(PackageParser.Package pkg, PackageParser.Package oldPkg,
+            PackageSetting pkgSetting,
             UserHandle user, int scanFlags, boolean chatty) throws PackageManagerException {
         final String pkgName = pkg.packageName;
         if (mCustomResolverComponentName != null &&
@@ -12071,6 +12189,10 @@ public class PackageManagerService extends IPackageManager.Stub
                 if (DEBUG_PACKAGE_SCANNING) Log.d(TAG, "  Permission Groups: " + r);
             }
 
+            // If a permission has had its defining app changed, or it has had its protection
+            // upgraded, we need to revoke apps that hold it
+            final List<String> permissionsWithChangedDefinition = new ArrayList<String>();
+
             N = pkg.permissions.size();
             r = null;
             for (i=0; i<N; i++) {
@@ -12106,6 +12228,7 @@ public class PackageManagerService extends IPackageManager.Stub
                 BasePermission bp = permissionMap.get(p.info.name);
 
                 // Allow system apps to redefine non-system permissions
+                boolean ownerChanged = false;
                 if (bp != null && !Objects.equals(bp.sourcePackage, p.info.packageName)) {
                     final boolean currentOwnerIsSystem = (bp.perm != null
                             && isSystemApp(bp.perm.owner));
@@ -12121,6 +12244,7 @@ public class PackageManagerService extends IPackageManager.Stub
                             String msg = "New decl " + p.owner + " of permission  "
                                     + p.info.name + " is system; overriding " + bp.sourcePackage;
                             reportSettingsProblem(Log.WARN, msg);
+                            ownerChanged = true;
                             bp = null;
                         }
                     }
@@ -12132,6 +12256,7 @@ public class PackageManagerService extends IPackageManager.Stub
                     permissionMap.put(p.info.name, bp);
                 }
 
+                boolean wasNonRuntime = !bp.isRuntime();
                 if (bp.perm == null) {
                     if (bp.sourcePackage == null
                             || bp.sourcePackage.equals(p.info.packageName)) {
@@ -12174,8 +12299,15 @@ public class PackageManagerService extends IPackageManager.Stub
                 if (bp.perm == p) {
                     bp.protectionLevel = p.info.protectionLevel;
                 }
-            }
 
+                if (bp.isRuntime() && (ownerChanged || wasNonRuntime)) {
+                    // If this is a runtime permission and the owner has changed, or this was a normal
+                    // permission, then permission state should be cleaned up
+                    bp.setPermissionDefinitionChanged(true);
+
+                    permissionsWithChangedDefinition.add(p.info.name);
+                }
+            }
             if (r != null) {
                 if (DEBUG_PACKAGE_SCANNING) Log.d(TAG, "  Permissions: " + r);
             }
@@ -12217,6 +12349,28 @@ public class PackageManagerService extends IPackageManager.Stub
                         mProtectedBroadcasts.add(pkg.protectedBroadcasts.get(i));
                     }
                 }
+            }
+
+            boolean hasOldPkg = oldPkg != null;
+            boolean hasPermissionDefinitionChanges = !permissionsWithChangedDefinition.isEmpty();
+            if (hasOldPkg || hasPermissionDefinitionChanges) {
+                // We need to call revokeRuntimePermissionsIfPermissionDefinitionChanged async
+                // as permission
+                // revoke callbacks from this method might need to kill apps which need the
+                // mPackages lock on a different thread. This would dead lock.
+                //
+                // Hence create a copy of all package names and pass it into
+                // revokeRuntimePermissionsIfGroupChanged. Only for those permissions might get
+                // revoked. If a new package is added before the async code runs the permission
+                // won't be granted yet, hence new packages are no problem.
+                final ArrayList<String> allPackageNames = new ArrayList<>(mPackages.keySet());
+
+                AsyncTask.execute(() -> {
+                    if (hasPermissionDefinitionChanges) {
+                        revokeRuntimePermissionsIfPermissionDefinitionChanged(
+                                permissionsWithChangedDefinition, allPackageNames);
+                    }
+                });
             }
         }
 
@@ -15989,20 +16143,26 @@ public class PackageManagerService extends IPackageManager.Stub
 
             // Verify: if target already has an installer package, it must
             // be signed with the same cert as the caller.
-            if (targetPackageSetting.installerPackageName != null) {
-                PackageSetting setting = mSettings.mPackages.get(
-                        targetPackageSetting.installerPackageName);
-                // If the currently set package isn't valid, then it's always
-                // okay to change it.
-                if (setting != null) {
-                    if (compareSignatures(callerSignature,
-                            setting.signatures.mSignatures)
-                            != PackageManager.SIGNATURE_MATCH) {
-                        throw new SecurityException(
-                                "Caller does not have same cert as old installer package "
-                                + targetPackageSetting.installerPackageName);
-                    }
+            String targetInstallerPackageName =
+                    targetPackageSetting.installerPackageName;
+            PackageSetting targetInstallerPkgSetting = targetInstallerPackageName == null ? null :
+                    mSettings.mPackages.get(targetInstallerPackageName);
+
+            if (targetInstallerPkgSetting != null) {
+                if (compareSignatures(callerSignature,
+                        targetInstallerPkgSetting.signatures.mSignatures)
+                        != PackageManager.SIGNATURE_MATCH) {
+                    throw new SecurityException(
+                            "Caller does not have same cert as old installer package "
+                                    + targetInstallerPackageName);
                 }
+            } else if (mContext.checkCallingOrSelfPermission(Manifest.permission.INSTALL_PACKAGES)
+                    != PackageManager.PERMISSION_GRANTED) {
+                // This is probably an attempt to exploit vulnerability b/150857253 of taking
+                // privileged installer permissions when the installer has been uninstalled or
+                // was never set.
+                EventLog.writeEvent(0x534e4554, "150857253", callingUid, "");
+                return;
             }
 
             // Okay!
@@ -19141,68 +19301,125 @@ public class PackageManagerService extends IPackageManager.Stub
 
         int count = 0;
         final String packageName = pkg.packageName;
-
+        boolean handlesWebUris = false;
+        ArraySet<String> domains = new ArraySet<>();
+        final boolean previouslyVerified;
+        boolean hostSetExpanded = false;
+        boolean needToRunVerify = false;
         synchronized (mPackages) {
             // If this is a new install and we see that we've already run verification for this
             // package, we have nothing to do: it means the state was restored from backup.
-            if (!replacing) {
-                IntentFilterVerificationInfo ivi =
-                        mSettings.getIntentFilterVerificationLPr(packageName);
-                if (ivi != null) {
-                    if (DEBUG_DOMAIN_VERIFICATION) {
-                        Slog.i(TAG, "Package " + packageName+ " already verified: status="
-                                + ivi.getStatusString());
-                    }
-                    return;
+            IntentFilterVerificationInfo ivi =
+                    mSettings.getIntentFilterVerificationLPr(packageName);
+            previouslyVerified = (ivi != null);
+            if (!replacing && previouslyVerified) {
+                if (DEBUG_DOMAIN_VERIFICATION) {
+                    Slog.i(TAG, "Package " + packageName + " already verified: status="
+                            + ivi.getStatusString());
                 }
+                return;
             }
 
-            // If any filters need to be verified, then all need to be.
-            boolean needToVerify = false;
+            if (DEBUG_DOMAIN_VERIFICATION) {
+                Slog.i(TAG, "    Previous verified hosts: "
+                        + (ivi == null ? "[none]" : ivi.getDomainsString()));
+            }
+
+            // If any filters need to be verified, then all need to be.  In addition, we need to
+            // know whether an updating app has any web navigation intent filters, to re-
+            // examine handling policy even if not re-verifying.
+            final boolean needsVerification = needsNetworkVerificationLPr(packageName);
             for (PackageParser.Activity a : pkg.activities) {
                 for (ActivityIntentInfo filter : a.intents) {
-                    if (filter.needsVerification() && needsNetworkVerificationLPr(filter)) {
+                    if (filter.handlesWebUris(true)) {
+                        handlesWebUris = true;
+                    }
+                    if (needsVerification && filter.needsVerification()) {
                         if (DEBUG_DOMAIN_VERIFICATION) {
-                            Slog.d(TAG, "Intent filter needs verification, so processing all filters");
+                            Slog.d(TAG, "autoVerify requested, processing all filters");
                         }
-                        needToVerify = true;
+                        needToRunVerify = true;
+                        // It's safe to break out here because filter.needsVerification()
+                        // can only be true if filter.handlesWebUris(true) returned true, so
+                        // we've already noted that.
                         break;
                     }
                 }
             }
 
-            if (needToVerify) {
+            // Compare the new set of recognized hosts if the app is either requesting
+            // autoVerify or has previously used autoVerify but no longer does.
+            if (needToRunVerify || previouslyVerified) {
                 final int verificationId = mIntentFilterVerificationToken++;
                 for (PackageParser.Activity a : pkg.activities) {
                     for (ActivityIntentInfo filter : a.intents) {
-                        if (filter.handlesWebUris(true) && needsNetworkVerificationLPr(filter)) {
+                        // Run verification against hosts mentioned in any web-nav intent filter,
+                        // even if the filter matches non-web schemes as well
+                        if (filter.handlesWebUris(false /*onlyWebSchemes*/)) {
                             if (DEBUG_DOMAIN_VERIFICATION) Slog.d(TAG,
                                     "Verification needed for IntentFilter:" + filter.toString());
                             mIntentFilterVerifier.addOneIntentFilterVerification(
                                     verifierUid, userId, verificationId, filter, packageName);
+                            domains.addAll(filter.getHostsList());
                             count++;
                         }
                     }
                 }
             }
+
+            if (DEBUG_DOMAIN_VERIFICATION) {
+                Slog.i(TAG, "    Update published hosts: " + domains.toString());
+            }
+
+            // If we've previously verified this same host set (or a subset), we can trust that
+            // a current ALWAYS policy is still applicable.  If this is the case, we're done.
+            // (If we aren't in ALWAYS, we want to reverify to allow for apps that had failing
+            // hosts in their intent filters, then pushed a new apk that removed them and now
+            // passes.)
+            //
+            // Cases:
+            //   + still autoVerify (needToRunVerify):
+            //      - preserve current state if all of: unexpanded, in always
+            //      - otherwise rerun as usual (fall through)
+            //   + no longer autoVerify (alreadyVerified && !needToRunVerify)
+            //      - wipe verification history always
+            //      - preserve current state if all of: unexpanded, in always
+            hostSetExpanded = !previouslyVerified
+                    || (ivi != null && !ivi.getDomains().containsAll(domains));
+            final int currentPolicy =
+                    mSettings.getIntentFilterVerificationStatusLPr(packageName, userId);
+            final boolean keepCurState = !hostSetExpanded
+                    && currentPolicy == INTENT_FILTER_DOMAIN_VERIFICATION_STATUS_ALWAYS;
+
+            if (needToRunVerify && keepCurState) {
+                if (DEBUG_DOMAIN_VERIFICATION) {
+                    Slog.i(TAG, "Host set not expanding + ALWAYS -> no need to reverify");
+                }
+                ivi.setDomains(domains);
+                scheduleWriteSettingsLocked();
+                return;
+            } else if (previouslyVerified && !needToRunVerify) {
+                // Prior autoVerify state but not requesting it now.  Clear autoVerify history,
+                // and preserve the always policy iff the host set is not expanding.
+                clearIntentFilterVerificationsLPw(packageName, userId, !keepCurState);
+                return;
+            }
         }
 
-        if (count > 0) {
+        if (needToRunVerify && count > 0) {
+            // app requested autoVerify and has at least one matching intent filter
             if (DEBUG_DOMAIN_VERIFICATION) Slog.d(TAG, "Starting " + count
                     + " IntentFilter verification" + (count > 1 ? "s" : "")
                     +  " for userId:" + userId);
             mIntentFilterVerifier.startVerifications(userId);
         } else {
             if (DEBUG_DOMAIN_VERIFICATION) {
-                Slog.d(TAG, "No filters or not all autoVerify for " + packageName);
+                Slog.d(TAG, "No web filters or no new host policy for " + packageName);
             }
         }
-    }
+     }
 
-    private boolean needsNetworkVerificationLPr(ActivityIntentInfo filter) {
-        final ComponentName cn  = filter.activity.getComponentName();
-        final String packageName = cn.getPackageName();
-
+    private boolean needsNetworkVerificationLPr(String packageName) {
         IntentFilterVerificationInfo ivi = mSettings.getIntentFilterVerificationLPr(
                 packageName);
         if (ivi == null) {
@@ -19211,6 +19428,7 @@ public class PackageManagerService extends IPackageManager.Stub
         int status = ivi.getStatus();
         switch (status) {
             case INTENT_FILTER_DOMAIN_VERIFICATION_STATUS_UNDEFINED:
+            case INTENT_FILTER_DOMAIN_VERIFICATION_STATUS_ALWAYS:
             case INTENT_FILTER_DOMAIN_VERIFICATION_STATUS_ASK:
                 return true;
 
@@ -19558,6 +19776,12 @@ public class PackageManagerService extends IPackageManager.Stub
     @Override
     public boolean isPackageDeviceAdminOnAnyUser(String packageName) {
         final int callingUid = Binder.getCallingUid();
+        if (checkUidPermission(android.Manifest.permission.MANAGE_USERS, callingUid)
+                != PERMISSION_GRANTED) {
+            EventLog.writeEvent(0x534e4554, "128599183", -1, "");
+            throw new SecurityException(android.Manifest.permission.MANAGE_USERS
+                    + " permission is required to call this API");
+        }
         if (getInstantAppPackageName(callingUid) != null
                 && !isCallerSameApp(packageName, callingUid)) {
             return false;
@@ -19664,7 +19888,7 @@ public class PackageManagerService extends IPackageManager.Stub
                             continue;
                         }
                         List<VersionedPackage> libClientPackages = getPackagesUsingSharedLibraryLPr(
-                                libEntry.info, 0, currUserId);
+                                libEntry.info, MATCH_KNOWN_PACKAGES, currUserId);
                         if (!ArrayUtils.isEmpty(libClientPackages)) {
                             Slog.w(TAG, "Not removing package " + pkg.manifestPackageName
                                     + " hosting lib " + libEntry.info.getName() + " version "
@@ -19914,7 +20138,7 @@ public class PackageManagerService extends IPackageManager.Stub
             boolean installedStateChanged = false;
             if (deletedPs != null) {
                 if ((flags&PackageManager.DELETE_KEEP_DATA) == 0) {
-                    clearIntentFilterVerificationsLPw(deletedPs.name, UserHandle.USER_ALL);
+                    clearIntentFilterVerificationsLPw(deletedPs.name, UserHandle.USER_ALL, true);
                     clearDefaultBrowserIfNeeded(packageName);
                     mSettings.mKeySetManagerService.removeAppKeySetDataLPw(packageName);
                     removedAppId = mSettings.removePackageLPw(packageName);
@@ -19997,7 +20221,8 @@ public class PackageManagerService extends IPackageManager.Stub
      * Tries to delete system package.
      */
     private boolean deleteSystemPackageLIF(PackageParser.Package deletedPkg,
-            PackageSetting deletedPs, int[] allUserHandles, int flags, PackageRemovedInfo outInfo,
+            PackageSetting deletedPs, int[] allUserHandles, int flags,
+            @Nullable PackageRemovedInfo outInfo,
             boolean writeSettings) {
         if (deletedPs.parentPackageName != null) {
             Slog.w(TAG, "Attempt to delete child system package " + deletedPkg.packageName);
@@ -20005,7 +20230,7 @@ public class PackageManagerService extends IPackageManager.Stub
         }
 
         final boolean applyUserRestrictions
-                = (allUserHandles != null) && (outInfo.origUsers != null);
+                = (allUserHandles != null) && outInfo != null && (outInfo.origUsers != null);
         final PackageSetting disabledPs;
         // Confirm if the system package has been updated
         // An updated system app can be deleted. This will also have to restore
@@ -20035,19 +20260,21 @@ public class PackageManagerService extends IPackageManager.Stub
             }
         }
 
-        // Delete the updated package
-        outInfo.isRemovedPackageSystemUpdate = true;
-        if (outInfo.removedChildPackages != null) {
-            final int childCount = (deletedPs.childPackageNames != null)
-                    ? deletedPs.childPackageNames.size() : 0;
-            for (int i = 0; i < childCount; i++) {
-                String childPackageName = deletedPs.childPackageNames.get(i);
-                if (disabledPs.childPackageNames != null && disabledPs.childPackageNames
-                        .contains(childPackageName)) {
-                    PackageRemovedInfo childInfo = outInfo.removedChildPackages.get(
-                            childPackageName);
-                    if (childInfo != null) {
-                        childInfo.isRemovedPackageSystemUpdate = true;
+        if (outInfo != null) {
+            // Delete the updated package
+            outInfo.isRemovedPackageSystemUpdate = true;
+            if (outInfo.removedChildPackages != null) {
+                final int childCount = (deletedPs.childPackageNames != null)
+                        ? deletedPs.childPackageNames.size() : 0;
+                for (int i = 0; i < childCount; i++) {
+                    String childPackageName = deletedPs.childPackageNames.get(i);
+                    if (disabledPs.childPackageNames != null && disabledPs.childPackageNames
+                            .contains(childPackageName)) {
+                        PackageRemovedInfo childInfo = outInfo.removedChildPackages.get(
+                                childPackageName);
+                        if (childInfo != null) {
+                            childInfo.isRemovedPackageSystemUpdate = true;
+                        }
                     }
                 }
             }
@@ -21217,12 +21444,13 @@ public class PackageManagerService extends IPackageManager.Stub
         final int packageCount = mPackages.size();
         for (int i = 0; i < packageCount; i++) {
             PackageParser.Package pkg = mPackages.valueAt(i);
-            clearIntentFilterVerificationsLPw(pkg.packageName, userId);
+            clearIntentFilterVerificationsLPw(pkg.packageName, userId, true);
         }
     }
 
     /** This method takes a specific user id as well as UserHandle.USER_ALL. */
-    void clearIntentFilterVerificationsLPw(String packageName, int userId) {
+    void clearIntentFilterVerificationsLPw(String packageName, int userId,
+            boolean alsoResetStatus) {
         if (userId == UserHandle.USER_ALL) {
             if (mSettings.removeIntentFilterVerificationLPw(packageName,
                     sUserManager.getUserIds())) {
@@ -21231,7 +21459,8 @@ public class PackageManagerService extends IPackageManager.Stub
                 }
             }
         } else {
-            if (mSettings.removeIntentFilterVerificationLPw(packageName, userId)) {
+            if (mSettings.removeIntentFilterVerificationLPw(packageName, userId,
+                    alsoResetStatus)) {
                 scheduleWritePackageRestrictionsLocked(userId);
             }
         }
@@ -24316,9 +24545,9 @@ Slog.v(TAG, ":: stepped forward, applying functor at tag " + parser.getName());
             mSettings.writeKernelMappingLPr(ps);
         }
 
-        final UserManager um = mContext.getSystemService(UserManager.class);
+        final UserManagerService um = sUserManager;
         UserManagerInternal umInternal = getUserManagerInternal();
-        for (UserInfo user : um.getUsers()) {
+        for (UserInfo user : um.getUsers(false /* excludeDying */)) {
             final int flags;
             if (umInternal.isUserUnlockingOrUnlocked(user.id)) {
                 flags = StorageManager.FLAG_STORAGE_DE | StorageManager.FLAG_STORAGE_CE;
@@ -24958,8 +25187,9 @@ Slog.v(TAG, ":: stepped forward, applying functor at tag " + parser.getName());
                 continue;
             }
             final String packageName = ps.pkg.packageName;
-            // Skip over if system app
-            if ((ps.pkgFlags & ApplicationInfo.FLAG_SYSTEM) != 0) {
+            // Skip over if system app or static shared library
+            if ((ps.pkgFlags & ApplicationInfo.FLAG_SYSTEM) != 0
+                    || !TextUtils.isEmpty(ps.pkg.staticSharedLibName)) {
                 continue;
             }
             if (DEBUG_CLEAN_APKS) {
@@ -25965,11 +26195,9 @@ Slog.v(TAG, ":: stepped forward, applying functor at tag " + parser.getName());
         }
         if (mExternalSourcesPolicy != null) {
             int isTrusted = mExternalSourcesPolicy.getPackageTrustedToInstallApps(packageName, uid);
-            if (isTrusted != PackageManagerInternal.ExternalSourcesPolicy.USER_DEFAULT) {
-                return isTrusted == PackageManagerInternal.ExternalSourcesPolicy.USER_TRUSTED;
-            }
+            return isTrusted == PackageManagerInternal.ExternalSourcesPolicy.USER_TRUSTED;
         }
-        return checkUidPermission(appOpPermission, uid) == PERMISSION_GRANTED;
+        return false;
     }
 
     @Override

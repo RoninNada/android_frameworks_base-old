@@ -857,27 +857,7 @@ public class ActivityStackSupervisor extends ConfigurationContainer implements D
     }
 
     /**
-     * Detects whether we should show a lock screen in front of this task for a locked user.
-     * <p>
-     * We'll do this if either of the following holds:
-     * <ul>
-     *   <li>The top activity explicitly belongs to {@param userId}.</li>
-     *   <li>The top activity returns a result to an activity belonging to {@param userId}.</li>
-     * </ul>
-     *
-     * @return {@code true} if the top activity looks like it belongs to {@param userId}.
-     */
-    private boolean taskTopActivityIsUser(TaskRecord task, @UserIdInt int userId) {
-        // To handle the case that work app is in the task but just is not the top one.
-        final ActivityRecord activityRecord = task.getTopActivity();
-        final ActivityRecord resultTo = (activityRecord != null ? activityRecord.resultTo : null);
-
-        return (activityRecord != null && activityRecord.userId == userId)
-                || (resultTo != null && resultTo.userId == userId);
-    }
-
-    /**
-     * Find all visible task stacks containing {@param userId} and intercept them with an activity
+     * Find all task stacks containing {@param userId} and intercept them with an activity
      * to block out the contents and possibly start a credential-confirming intent.
      *
      * @param userId user handle for the locked managed profile.
@@ -890,13 +870,14 @@ public class ActivityStackSupervisor extends ConfigurationContainer implements D
                 final List<TaskRecord> tasks = stacks.get(stackNdx).getAllTasks();
                 for (int taskNdx = tasks.size() - 1; taskNdx >= 0; taskNdx--) {
                     final TaskRecord task = tasks.get(taskNdx);
-
-                    // Check the task for a top activity belonging to userId, or returning a result
-                    // to an activity belonging to userId. Example case: a document picker for
-                    // personal files, opened by a work app, should still get locked.
-                    if (taskTopActivityIsUser(task, userId)) {
-                        mService.mTaskChangeNotificationController.notifyTaskProfileLocked(
-                                task.taskId, userId);
+                    for (int activityNdx = task.mActivities.size() - 1; activityNdx >= 0;
+                            activityNdx--) {
+                        final ActivityRecord activity = task.mActivities.get(activityNdx);
+                        if (!activity.finishing && activity.userId == userId) {
+                            mService.mTaskChangeNotificationController.notifyTaskProfileLocked(
+                                    task.taskId, userId);
+                            break;
+                        }
                     }
                 }
             }
@@ -4603,19 +4584,11 @@ public class ActivityStackSupervisor extends ConfigurationContainer implements D
                             mLockTaskNotify = new LockTaskNotify(mService.mContext);
                         }
                         mLockTaskNotify.show(false);
-                        try {
-                            boolean shouldLockKeyguard = Settings.Secure.getIntForUser(
-                                    mService.mContext.getContentResolver(),
-                                    Settings.Secure.LOCK_TO_APP_EXIT_LOCKED,
-                                    UserHandle.USER_CURRENT) != 0;
-                            if (mLockTaskModeState == LOCK_TASK_MODE_PINNED && shouldLockKeyguard) {
-                                mWindowManager.lockNow(null);
-                                mWindowManager.dismissKeyguard(null /* callback */);
-                                new LockPatternUtils(mService.mContext)
-                                        .requireCredentialEntry(UserHandle.USER_ALL);
-                            }
-                        } catch (SettingNotFoundException e) {
-                            // No setting, don't lock.
+                        if (mLockTaskModeState == LOCK_TASK_MODE_PINNED && shouldLockKeyguard()) {
+                            mWindowManager.lockNow(null);
+                            mWindowManager.dismissKeyguard(null /* callback */);
+                            new LockPatternUtils(mService.mContext)
+                                    .requireCredentialEntry(UserHandle.USER_ALL);
                         }
                     } catch (RemoteException ex) {
                         throw new RuntimeException(ex);
@@ -4639,6 +4612,22 @@ public class ActivityStackSupervisor extends ConfigurationContainer implements D
                 } break;
 
             }
+        }
+    }
+
+    private boolean shouldLockKeyguard() {
+        // This functionality should be kept consistent with
+        // com.android.settings.security.ScreenPinningSettings (see b/127605586)
+        try {
+            return Settings.Secure.getIntForUser(
+                mService.mContext.getContentResolver(),
+                Settings.Secure.LOCK_TO_APP_EXIT_LOCKED,
+                UserHandle.USER_CURRENT) != 0;
+        } catch (Settings.SettingNotFoundException e) {
+            // Log to SafetyNet for b/127605586
+            android.util.EventLog.writeEvent(0x534e4554, "127605586", -1, "");
+            LockPatternUtils lockPatternUtils = new LockPatternUtils(mService.mContext);
+            return lockPatternUtils.isSecure(mCurrentUser);
         }
     }
 

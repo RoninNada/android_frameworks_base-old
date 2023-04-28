@@ -922,6 +922,8 @@ public class PhoneWindowManager implements WindowManagerPolicy {
 
     private final MutableBoolean mTmpBoolean = new MutableBoolean(false);
 
+    private boolean mLockNowPending = false;
+
     private final List<DeviceKeyHandler> mDeviceKeyHandlers = new ArrayList<>();
     private LineageButtons mLineageButtons;
 
@@ -1141,8 +1143,8 @@ public class PhoneWindowManager implements WindowManagerPolicy {
             resolver.registerContentObserver(Settings.Global.getUriFor(
                     Settings.Global.POLICY_CONTROL), false, this,
                     UserHandle.USER_ALL);
-            resolver.registerContentObserver(LineageSettings.System.getUriFor(
-                    LineageSettings.System.ACCELEROMETER_ROTATION_ANGLES), false, this,
+            resolver.registerContentObserver(Settings.System.getUriFor(
+                    Settings.System.ACCELEROMETER_ROTATION_ANGLES), false, this,
                     UserHandle.USER_ALL);
             resolver.registerContentObserver(LineageSettings.System.getUriFor(
                     LineageSettings.System.TORCH_LONG_PRESS_POWER_GESTURE), false, this,
@@ -3161,8 +3163,8 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                 carbonCustomGestureFingers, carbonCustomGestureDown + carbonCustomGestureFingers,
                 CarbonGesturesListener.Directions.DOWN, carbonCustomGestureDownPkg);
 
-            mUserRotationAngles = LineageSettings.System.getInt(resolver,
-                    LineageSettings.System.ACCELEROMETER_ROTATION_ANGLES, -1);
+            mUserRotationAngles = Settings.System.getInt(resolver,
+                    Settings.System.ACCELEROMETER_ROTATION_ANGLES, -1);
 
             boolean useEdgeService = true;
             if (useEdgeService ^ mUsingEdgeGestureServiceForGestures && mSystemReady) {
@@ -3552,6 +3554,8 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                         attrs.windowAnimations = com.android.internal.R.style.Animation_Toast_SlideRightLeft;
                         break;
                 }
+                // Toasts can't be clickable
+                attrs.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
         }
 
         if (attrs.type != TYPE_STATUS_BAR) {
@@ -6995,8 +6999,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
         @Override public void run() {
             synchronized (mScreenshotLock) {
                 if (mScreenshotConnection != null) {
-                    mContext.unbindService(mScreenshotConnection);
-                    mScreenshotConnection = null;
+                    resetScreenshotConnection();
                     notifyScreenshotError();
                 }
             }
@@ -7039,8 +7042,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                             public void handleMessage(Message msg) {
                                 synchronized (mScreenshotLock) {
                                     if (mScreenshotConnection == myConn) {
-                                        mContext.unbindService(mScreenshotConnection);
-                                        mScreenshotConnection = null;
+                                        resetScreenshotConnection();
                                         mHandler.removeCallbacks(mScreenshotTimeout);
                                     }
                                 }
@@ -7063,8 +7065,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                 public void onServiceDisconnected(ComponentName name) {
                     synchronized (mScreenshotLock) {
                         if (mScreenshotConnection != null) {
-                            mContext.unbindService(mScreenshotConnection);
-                            mScreenshotConnection = null;
+                            resetScreenshotConnection();
                             mHandler.removeCallbacks(mScreenshotTimeout);
                             notifyScreenshotError();
                         }
@@ -7181,6 +7182,16 @@ public class PhoneWindowManager implements WindowManagerPolicy {
             default:
                 Log.w(TAG, "getVolumeWakeTriggered: unexpected keyCode=" + keyCode);
                 return false;
+        }
+    }
+
+    /**
+     * Reset the screenshot connection.
+     */
+    private void resetScreenshotConnection() {
+        if (mScreenshotConnection != null) {
+            mContext.unbindService(mScreenshotConnection);
+            mScreenshotConnection = null;
         }
     }
 
@@ -8017,6 +8028,12 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                 synchronized (mWindowManagerFuncs.getWindowManagerLock()) {
                     mLastSystemUiFlags = 0;
                     updateSystemUiVisibilityLw();
+                }
+
+                // close the screenshot connection on user switch so that screenshots
+                // are always started with the correct user's context
+                synchronized(mScreenshotLock) {
+                  resetScreenshotConnection();
                 }
             }
         }
@@ -9028,6 +9045,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                     mKeyguardDelegate.doKeyguardTimeout(options);
                 }
                 mLockScreenTimerActive = false;
+                mLockNowPending = false;
                 options = null;
             }
         }
@@ -9037,7 +9055,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
         }
     }
 
-    ScreenLockTimeout mScreenLockTimeout = new ScreenLockTimeout();
+    final ScreenLockTimeout mScreenLockTimeout = new ScreenLockTimeout();
 
     @Override
     public void lockNow(Bundle options) {
@@ -9049,10 +9067,17 @@ public class PhoneWindowManager implements WindowManagerPolicy {
             mScreenLockTimeout.setLockOptions(options);
         }
         mHandler.post(mScreenLockTimeout);
+        synchronized (mScreenLockTimeout) {
+            mLockNowPending = true;
+        }
     }
 
     private void updateLockScreenTimeout() {
         synchronized (mScreenLockTimeout) {
+            if (mLockNowPending) {
+                Log.w(TAG, "lockNow pending, ignore updating lockscreen timeout");
+                return;
+            }
             boolean enable = (mAllowLockscreenWhenOn && mAwake &&
                     mKeyguardDelegate != null && mKeyguardDelegate.isSecure(mCurrentUserId));
             if (mLockScreenTimerActive != enable) {

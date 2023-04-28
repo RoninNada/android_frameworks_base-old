@@ -58,6 +58,7 @@ import static android.view.WindowManager.LayoutParams.TYPE_DREAM;
 import static android.view.WindowManager.LayoutParams.TYPE_INPUT_METHOD;
 import static android.view.WindowManager.LayoutParams.TYPE_INPUT_METHOD_DIALOG;
 import static android.view.WindowManager.LayoutParams.TYPE_NAVIGATION_BAR;
+import static android.view.WindowManager.LayoutParams.TYPE_PRESENTATION;
 import static android.view.WindowManager.LayoutParams.TYPE_PRIVATE_PRESENTATION;
 import static android.view.WindowManager.LayoutParams.TYPE_QS_DIALOG;
 import static android.view.WindowManager.LayoutParams.TYPE_SLIM_RECENTS;
@@ -71,6 +72,7 @@ import static android.view.WindowManagerPolicy.FINISH_LAYOUT_REDO_LAYOUT;
 import static android.view.WindowManagerPolicy.FINISH_LAYOUT_REDO_WALLPAPER;
 import static com.android.server.LockGuard.INDEX_WINDOW;
 import static com.android.server.LockGuard.installLock;
+import static com.android.server.wm.AppTransition.MAX_APP_TRANSITION_DURATION;
 import static com.android.server.wm.AppTransition.TRANSIT_UNSET;
 import static com.android.server.wm.AppWindowAnimator.PROLONG_ANIMATION_AT_END;
 import static com.android.server.wm.AppWindowAnimator.PROLONG_ANIMATION_AT_START;
@@ -1269,6 +1271,13 @@ public class WindowManagerService extends IWindowManager.Stub
                 return WindowManagerGlobal.ADD_PERMISSION_DENIED;
             }
 
+            if (type == TYPE_PRESENTATION && !displayContent.getDisplay().isPublicPresentation()) {
+                Slog.w(TAG_WM,
+                        "Attempted to add presentation window to a non-suitable display.  "
+                                + "Aborting.");
+                return WindowManagerGlobal.ADD_INVALID_DISPLAY;
+            }
+
             AppWindowToken atoken = null;
             final boolean hasParent = parentWindow != null;
             // Use existing parent window token for child windows since they go in the same token
@@ -1418,8 +1427,13 @@ public class WindowManagerService extends IWindowManager.Stub
                 return res;
             }
 
-            final boolean openInputChannels = (outInputChannel != null
-                    && (attrs.inputFeatures & INPUT_FEATURE_NO_INPUT_CHANNEL) == 0);
+            boolean openInputChannels = (outInputChannel != null
+                && (attrs.inputFeatures & INPUT_FEATURE_NO_INPUT_CHANNEL) == 0);
+            if (callingUid != SYSTEM_UID) {
+                Slog.e(TAG_WM,
+                    "App trying to use insecure INPUT_FEATURE_NO_INPUT_CHANNEL flag. Ignoring");
+                openInputChannels = true;
+            }
             if  (openInputChannels) {
                 win.openInputChannel(outInputChannel);
             }
@@ -2427,7 +2441,16 @@ public class WindowManagerService extends IWindowManager.Stub
                     displayConfig.orientation, frame, displayFrame, insets, surfaceInsets,
                     stableInsets, isVoiceInteraction, freeform, atoken.getTask().mTaskId);
             if (a != null) {
-                if (DEBUG_ANIM) logWithStack(TAG, "Loaded animation " + a + " for " + atoken);
+                if (a != null) {
+                    // Setup the maximum app transition duration to prevent malicious app may set a long
+                    // animation duration or infinite repeat counts for the app transition through
+                    // ActivityOption#makeCustomAnimation or WindowManager#overridePendingTransition.
+                    a.restrictDuration(MAX_APP_TRANSITION_DURATION);
+                }
+                if (DEBUG_ANIM) {
+                    logWithStack(TAG, "Loaded animation " + a + " for " + atoken
+                            + ", duration: " + ((a != null) ? a.getDuration() : 0));
+                }
                 final int containingWidth = frame.width();
                 final int containingHeight = frame.height();
                 atoken.mAppAnimator.setAnimation(a, containingWidth, containingHeight, width,

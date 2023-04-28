@@ -386,11 +386,41 @@ public class PackageInstallerSession extends IPackageInstallerSession.Stub {
         }
     }
 
-    public SessionInfo generateInfo() {
-        return generateInfo(true);
+    /**
+     * Returns {@code true} if the {@link SessionInfo} object should be produced with potentially
+     * sensitive data scrubbed from its fields.
+     *
+     * @param callingUid the uid of the caller; the recipient of the {@link SessionInfo} that may
+     *                   need to be scrubbed
+     */
+    private boolean shouldScrubData(int callingUid) {
+        return !(callingUid < Process.FIRST_APPLICATION_UID || getInstallerUid() == callingUid);
     }
 
-    public SessionInfo generateInfo(boolean includeIcon) {
+    /**
+     * Generates a {@link SessionInfo} object for the provided uid. This may result in some fields
+     * that may contain sensitive info being filtered.
+     *
+     * @param includeIcon true if the icon should be included in the object
+     * @param callingUid the uid of the caller; the recipient of the {@link SessionInfo} that may
+     *                   need to be scrubbed
+     * @see #shouldScrubData(int)
+     */
+    public SessionInfo generateInfoForCaller(boolean includeIcon, int callingUid) {
+        return generateInfoInternal(includeIcon, shouldScrubData(callingUid));
+    }
+
+    /**
+     * Generates a {@link SessionInfo} object to ensure proper hiding of sensitive fields.
+     *
+     * @param includeIcon true if the icon should be included in the object
+     * @see #generateInfoForCaller(boolean, int)
+     */
+    public SessionInfo generateInfoScrubbed(boolean includeIcon) {
+        return generateInfoInternal(includeIcon, true /*scrubData*/);
+    }
+
+    private SessionInfo generateInfoInternal(boolean includeIcon, boolean scrubData) {
         final SessionInfo info = new SessionInfo();
         synchronized (mLock) {
             info.sessionId = sessionId;
@@ -411,9 +441,13 @@ public class PackageInstallerSession extends IPackageInstallerSession.Stub {
             info.appLabel = params.appLabel;
 
             info.installLocation = params.installLocation;
-            info.originatingUri = params.originatingUri;
+            if (!scrubData) {
+                info.originatingUri = params.originatingUri;
+            }
             info.originatingUid = params.originatingUid;
-            info.referrerUri = params.referrerUri;
+            if (!scrubData) {
+                info.referrerUri = params.referrerUri;
+            }
             info.grantedRuntimePermissions = params.grantedRuntimePermissions;
             info.installFlags = params.installFlags;
         }
@@ -665,6 +699,19 @@ public class PackageInstallerSession extends IPackageInstallerSession.Stub {
     private void assertCallerIsOwnerOrRootLocked() {
         final int callingUid = Binder.getCallingUid();
         if (callingUid != Process.ROOT_UID && callingUid != mInstallerUid) {
+            throw new SecurityException("Session does not belong to uid " + callingUid);
+        }
+    }
+
+    /**
+     * Check if the caller is the owner of this session. Otherwise throw a
+     * {@link SecurityException}.
+     */
+    @GuardedBy("mLock")
+    private void assertCallerIsOwnerOrRootOrSystemLocked() {
+        final int callingUid = Binder.getCallingUid();
+        if (callingUid != Process.ROOT_UID && callingUid != mInstallerUid
+                && callingUid != Process.SYSTEM_UID) {
             throw new SecurityException("Session does not belong to uid " + callingUid);
         }
     }
@@ -1455,7 +1502,7 @@ public class PackageInstallerSession extends IPackageInstallerSession.Stub {
     @Override
     public void abandon() {
         synchronized (mLock) {
-            assertCallerIsOwnerOrRootLocked();
+            assertCallerIsOwnerOrRootOrSystemLocked();
 
             if (mRelinquished) {
                 Slog.d(TAG, "Ignoring abandon after commit relinquished control");
@@ -1490,7 +1537,7 @@ public class PackageInstallerSession extends IPackageInstallerSession.Stub {
         // Send broadcast to default launcher only if it's a new install
         final boolean isNewInstall = extras == null || !extras.getBoolean(Intent.EXTRA_REPLACING);
         if (success && isNewInstall) {
-            mPm.sendSessionCommitBroadcast(generateInfo(), userId);
+            mPm.sendSessionCommitBroadcast(generateInfoScrubbed(true /*icon*/), userId);
         }
 
         mCallback.onSessionFinished(this, success);

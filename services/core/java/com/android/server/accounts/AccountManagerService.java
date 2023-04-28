@@ -46,6 +46,7 @@ import android.app.admin.DeviceAdminInfo;
 import android.app.admin.DevicePolicyManager;
 import android.app.admin.DevicePolicyManagerInternal;
 import android.content.BroadcastReceiver;
+import android.content.ClipData;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -438,7 +439,7 @@ public class AccountManagerService
         if (!checkAccess || hasAccountAccess(account, packageName,
                 UserHandle.getUserHandleForUid(uid))) {
             cancelNotification(getCredentialPermissionNotificationId(account,
-                    AccountManager.ACCOUNT_ACCESS_TOKEN_TYPE, uid), packageName,
+                    AccountManager.ACCOUNT_ACCESS_TOKEN_TYPE, uid),
                     UserHandle.getUserHandleForUid(uid));
         }
     }
@@ -1777,6 +1778,11 @@ public class AccountManagerService
                                 + ", skipping since the account already exists");
                         return false;
                     }
+                    if (accounts.accountsDb.findAllDeAccounts().size() > 100) {
+                        Log.w(TAG, "insertAccountIntoDatabase: " + account
+                                + ", skipping since more than 50 accounts on device exist");
+                        return false;
+                    }
                     long accountId = accounts.accountsDb.insertCeAccount(account, password);
                     if (accountId < 0) {
                         Log.w(TAG, "insertAccountIntoDatabase: " + account
@@ -3017,8 +3023,8 @@ public class AccountManagerService
         String authTokenType = intent.getStringExtra(
                 GrantCredentialsPermissionActivity.EXTRAS_AUTH_TOKEN_TYPE);
         final String titleAndSubtitle =
-                mContext.getString(R.string.permission_request_notification_with_subtitle,
-                account.name);
+                mContext.getString(R.string.permission_request_notification_for_app_with_subtitle,
+                getApplicationLabel(packageName), account.name);
         final int index = titleAndSubtitle.indexOf('\n');
         String title = titleAndSubtitle;
         String subtitle = "";
@@ -3040,7 +3046,16 @@ public class AccountManagerService
                             PendingIntent.FLAG_CANCEL_CURRENT, null, user))
                     .build();
         installNotification(getCredentialPermissionNotificationId(
-                account, authTokenType, uid), n, packageName, user.getIdentifier());
+                account, authTokenType, uid), n, "android", user.getIdentifier());
+    }
+
+    private String getApplicationLabel(String packageName) {
+        try {
+            return mPackageManager.getApplicationLabel(
+                    mPackageManager.getApplicationInfo(packageName, 0)).toString();
+        } catch (PackageManager.NameNotFoundException e) {
+            return packageName;
+        }
     }
 
     private Intent newGrantCredentialsPermissionIntent(Account account, String packageName,
@@ -3076,7 +3091,7 @@ public class AccountManagerService
             nId = accounts.credentialsPermissionNotificationIds.get(key);
             if (nId == null) {
                 String tag = TAG + ":" + SystemMessage.NOTE_ACCOUNT_CREDENTIAL_PERMISSION
-                        + ":" + account.hashCode() + ":" + authTokenType.hashCode();
+                        + ":" + account.hashCode() + ":" + authTokenType.hashCode() + ":" + uid;
                 int id = SystemMessage.NOTE_ACCOUNT_CREDENTIAL_PERMISSION;
                 nId = new NotificationId(tag, id);
                 accounts.credentialsPermissionNotificationIds.put(key, nId);
@@ -4029,7 +4044,7 @@ public class AccountManagerService
 
             private void handleAuthenticatorResponse(boolean accessGranted) throws RemoteException {
                 cancelNotification(getCredentialPermissionNotificationId(account,
-                        AccountManager.ACCOUNT_ACCESS_TOKEN_TYPE, uid), packageName,
+                        AccountManager.ACCOUNT_ACCESS_TOKEN_TYPE, uid),
                         UserHandle.getUserHandleForUid(uid));
                 if (callback != null) {
                     Bundle result = new Bundle();
@@ -4725,6 +4740,11 @@ public class AccountManagerService
          * supplied entries in the system Settings app.
          */
         protected boolean checkKeyIntent(int authUid, Intent intent) {
+            // Explicitly set an empty ClipData to ensure that we don't offer to
+            // promote any Uris contained inside for granting purposes
+            if (intent.getClipData() == null) {
+                intent.setClipData(ClipData.newPlainText(null, null));
+            }
             intent.setFlags(intent.getFlags() & ~(Intent.FLAG_GRANT_READ_URI_PERMISSION
                     | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                     | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION

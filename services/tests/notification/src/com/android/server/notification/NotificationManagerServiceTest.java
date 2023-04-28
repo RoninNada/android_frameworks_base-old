@@ -45,6 +45,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import android.app.ActivityManager;
+import android.app.ActivityManagerInternal;
 import android.app.INotificationManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -124,6 +125,8 @@ public class NotificationManagerServiceTest extends NotificationTestCase {
     private AudioManager mAudioManager;
     @Mock
     ActivityManager mActivityManager;
+    @Mock
+    ActivityManagerInternal mAmi;
     NotificationManagerService.WorkerHandler mHandler;
 
     private NotificationChannel mTestNotificationChannel = new NotificationChannel(
@@ -213,7 +216,7 @@ public class NotificationManagerServiceTest extends NotificationTestCase {
                     mPackageManager, mPackageManagerClient, mockLightsManager,
                     mListeners, mAssistants, mConditionProviders,
                     mCompanionMgr, mSnoozeHelper, mUsageStats, mPolicyFile, mActivityManager,
-                    mGroupHelper);
+                    mGroupHelper, mAmi);
         } catch (SecurityException e) {
             if (!e.getMessage().contains("Permission Denial: not allowed to send broadcast")) {
                 throw e;
@@ -544,6 +547,21 @@ public class NotificationManagerServiceTest extends NotificationTestCase {
                 mBinderService.getActiveNotifications(PKG);
         assertEquals(0, notifs.length);
         assertEquals(0, mNotificationManagerService.getNotificationRecordCount());
+    }
+
+
+    @Test
+    public void testCancelImmediatelyAfterEnqueueNotifiesListeners_ForegroundServiceFlag()
+            throws Exception {
+        final StatusBarNotification sbn = generateNotificationRecord(null).sbn;
+        sbn.getNotification().flags =
+                Notification.FLAG_ONGOING_EVENT | Notification.FLAG_FOREGROUND_SERVICE;
+        mBinderService.enqueueNotificationWithTag(PKG, "opPkg", "tag",
+                sbn.getId(), sbn.getNotification(), sbn.getUserId());
+        mBinderService.cancelNotificationWithTag(PKG, "tag", sbn.getId(), sbn.getUserId());
+        waitForIdle();
+        verify(mListeners, times(1)).notifyPostedLocked(any(), any());
+        verify(mListeners, times(1)).notifyRemovedLocked(any(), anyInt());
     }
 
     @Test

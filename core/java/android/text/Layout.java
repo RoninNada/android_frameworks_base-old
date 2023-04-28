@@ -1070,6 +1070,9 @@ public abstract class Layout {
             if (limit > lineEnd) {
                 limit = lineEnd;
             }
+            if (limit == start) {
+                continue;
+            }
             level[limit - lineStart - 1] =
                     (byte) ((runs[i + 1] >>> RUN_LEVEL_SHIFT) & RUN_LEVEL_MASK);
         }
@@ -1165,8 +1168,8 @@ public abstract class Layout {
     }
 
     /**
-     * Computes in linear time the results of calling
-     * #getHorizontal for all offsets on a line.
+     * Computes in linear time the results of calling #getHorizontal for all offsets on a line.
+     *
      * @param line The line giving the offsets we compute information for
      * @param clamped Whether to clamp the results to the width of the layout
      * @param primary Whether the results should be the primary or the secondary horizontal
@@ -1201,7 +1204,7 @@ public abstract class Layout {
         TextLine.recycle(tl);
 
         if (clamped) {
-            for (int offset = 0; offset <= wid.length; ++offset) {
+            for (int offset = 0; offset < wid.length; ++offset) {
                 if (wid[offset] > mWidth) {
                     wid[offset] = mWidth;
                 }
@@ -2211,20 +2214,20 @@ public abstract class Layout {
         int ellipsisStart = getEllipsisStart(line);
         int linestart = getLineStart(line);
 
-        for (int i = ellipsisStart; i < ellipsisStart + ellipsisCount; i++) {
+        final int min = Math.max(0, start - ellipsisStart - linestart);
+        final int max = Math.min(ellipsisCount, end - ellipsisStart - linestart);
+
+        for (int i = min; i < max; i++) {
             char c;
 
-            if (i == ellipsisStart) {
+            if (i == 0) {
                 c = getEllipsisChar(method); // ellipsis
             } else {
                 c = '\uFEFF'; // 0-width space
             }
 
-            int a = i + linestart;
-
-            if (a >= start && a < end) {
-                dest[destoff + a - start] = c;
-            }
+            int a = i + ellipsisStart + linestart;
+            dest[destoff + a - start] = c;
         }
     }
 
