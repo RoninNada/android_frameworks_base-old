@@ -156,7 +156,7 @@
     <string name="yes">Sì</string>
     <string name="no">No</string>
     <!-- Slim Shortcut Actions -->
-    <string name="shortcut_picker">Scorciatoie crDroid</string>
+    <string name="shortcut_picker">Scorciatoie Custom</string>
     <string name="shortcut_rotation">Attiva/disattiva blocco rotazione</string>
     <string name="shortcut_torch">Torcia</string>
     <string name="shortcut_chamber">Camera dei segreti</string>

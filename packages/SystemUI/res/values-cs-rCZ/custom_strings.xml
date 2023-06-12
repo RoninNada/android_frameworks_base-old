@@ -156,7 +156,7 @@
     <string name="yes">Ano</string>
     <string name="no">Ne</string>
     <!-- Slim Shortcut Actions -->
-    <string name="shortcut_picker">Zkratky crDroid</string>
+    <string name="shortcut_picker">Zkratky Custom</string>
     <string name="shortcut_rotation">Přepínač zámku rotace obrazovky</string>
     <string name="shortcut_torch">Svítilna</string>
     <string name="shortcut_chamber">Tajemná komnata</string>

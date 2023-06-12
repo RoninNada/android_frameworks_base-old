@@ -156,7 +156,7 @@
     <string name="yes">Sí</string>
     <string name="no">No</string>
     <!-- Slim Shortcut Actions -->
-    <string name="shortcut_picker">Accesos crDroid</string>
+    <string name="shortcut_picker">Accesos Custom</string>
     <string name="shortcut_rotation">Girar automáticamente</string>
     <string name="shortcut_torch">Linterna</string>
     <string name="shortcut_chamber">Cámara de los secretos</string>

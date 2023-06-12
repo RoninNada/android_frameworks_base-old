@@ -188,7 +188,7 @@
     <string name="no">No</string>
 
     <!-- Slim Shortcut Actions -->
-    <string name="shortcut_picker">crDroid Shortcuts</string>
+    <string name="shortcut_picker">Custom Shortcuts</string>
     <string name="shortcut_rotation">Rotation lock toggle</string>
     <string name="shortcut_torch">Flashlight</string>
     <string name="shortcut_chamber">Chamber of Secrets</string>

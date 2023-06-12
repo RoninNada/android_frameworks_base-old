@@ -519,7 +519,7 @@
         <activity
             android:name="com.android.systemui.CreateShortcut"
             android:label="@string/shortcut_picker"
-            android:icon="@drawable/ic_shortcut_custom"
+            android:icon="@drawable/ic_android_logo"
             android:configChanges="orientation|keyboardHidden|screenSize" >
             <intent-filter>
                 <action android:name="android.intent.action.CREATE_SHORTCUT" />
@@ -531,7 +531,7 @@
         <activity
             android:name="com.android.systemui.shortcuts.ChamberOfSecrets"
             android:label="@string/shortcut_chamber"
-            android:icon="@drawable/ic_shortcut_custom"
+            android:icon="@drawable/ic_android_logo"
             android:theme="@android:style/Theme.NoDisplay"
             android:excludeFromRecents="true"
             android:launchMode="singleInstance" >

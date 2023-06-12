@@ -156,7 +156,7 @@
     <string name="yes">Да</string>
     <string name="no">Нет</string>
     <!-- Slim Shortcut Actions -->
-    <string name="shortcut_picker">Ярлыки crDroid</string>
+    <string name="shortcut_picker">Ярлыки Custom</string>
     <string name="shortcut_rotation">Автоповорот</string>
     <string name="shortcut_torch">Фонарик</string>
     <string name="shortcut_chamber">Тайная комната</string>

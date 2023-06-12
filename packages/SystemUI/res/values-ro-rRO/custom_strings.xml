@@ -156,7 +156,7 @@
     <string name="yes">Da</string>
     <string name="no">Nu</string>
     <!-- Slim Shortcut Actions -->
-    <string name="shortcut_picker">Comenzi rapide crDroid</string>
+    <string name="shortcut_picker">Comenzi rapide Custom</string>
     <string name="shortcut_rotation">Comutare blocare rotaţie</string>
     <string name="shortcut_torch">Lanternă</string>
     <string name="shortcut_chamber">Camera Secretelor</string>

@@ -156,7 +156,7 @@
     <string name="yes">Có</string>
     <string name="no">Không</string>
     <!-- Slim Shortcut Actions -->
-    <string name="shortcut_picker">Phím tắt crDroid</string>
+    <string name="shortcut_picker">Phím tắt Custom</string>
     <string name="shortcut_rotation">Bật/tắt Khoá xoay màn hình</string>
     <string name="shortcut_torch">Đèn pin</string>
     <string name="shortcut_chamber">Phòng chứa Bí mật</string>

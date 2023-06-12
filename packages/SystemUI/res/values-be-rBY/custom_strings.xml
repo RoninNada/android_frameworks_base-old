@@ -156,7 +156,7 @@
     <string name="yes">Так</string>
     <string name="no">Не</string>
     <!-- Slim Shortcut Actions -->
-    <string name="shortcut_picker">Ярлыкі crDroid</string>
+    <string name="shortcut_picker">Ярлыкі Custom</string>
     <string name="shortcut_rotation">Перамыкач блакавання кручэння</string>
     <string name="shortcut_torch">Ліхтарык</string>
     <string name="shortcut_chamber">Таемны пакой</string>

@@ -120,7 +120,7 @@ public class CreateShortcut extends LauncherActivity {
         } else if (c.equals("Recovery")) {
             return R.drawable.ic_shortcut_reboot_recovery;
         } else if (c.equals("ChamberOfSecrets")) {
-            return R.drawable.ic_shortcut_custom;
+            return R.drawable.ic_android_logo;
         } else if (c.equals("ClearNotifications")) {
             return R.drawable.ic_shortcut_clear_notifications;
         } else {
